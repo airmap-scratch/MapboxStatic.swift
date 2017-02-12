@@ -12,20 +12,20 @@ typealias JSONDictionary = [String: AnyObject]
 public let MBStaticErrorDomain = "MBStaticErrorDomain"
 
 /// The Mapbox access token specified in the main application bundle’s Info.plist.
-let defaultAccessToken = Bundle.main().objectForInfoDictionaryKey("MGLMapboxAccessToken") as? String
+let defaultAccessToken = Bundle.main.object(forInfoDictionaryKey: "MGLMapboxAccessToken") as? String
 
 /// The user agent string for any HTTP requests performed directly within this library.
 let userAgent: String = {
     var components: [String] = []
     
-    if let appName = Bundle.main().infoDictionary?["CFBundleName"] as? String ?? Bundle.main().infoDictionary?["CFBundleIdentifier"] as? String {
-        let version = Bundle.main().infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+    if let appName = Bundle.main.infoDictionary?["CFBundleName"] as? String ?? Bundle.main.infoDictionary?["CFBundleIdentifier"] as? String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
         components.append("\(appName)/\(version)")
     }
     
     let libraryBundle: Bundle? = Bundle(for: Snapshot.self)
     
-    if let libraryName = libraryBundle?.infoDictionary?["CFBundleName"] as? String, version = libraryBundle?.infoDictionary?["CFBundleShortVersionString"] as? String {
+    if let libraryName = libraryBundle?.infoDictionary?["CFBundleName"] as? String, let version = libraryBundle?.infoDictionary?["CFBundleShortVersionString"] as? String {
         components.append("\(libraryName)/\(version)")
     }
     
@@ -169,7 +169,7 @@ public class SnapshotOptions: NSObject, SnapshotOptionsProtocol {
      
      The default value of this property matches the natural scale factor associated with the main screen. However, only images with a scale factor of 1.0 or 2.0 are ever returned by the classic Static API, so a scale factor of 1.0 of less results in a 1× (standard-resolution) image, while a scale factor greater than 1.0 results in a 2× (high-resolution or Retina) image.
      */
-    public var scale: CGFloat = UIScreen.main().scale
+    public var scale: CGFloat = UIScreen.main.scale
     #endif
     
     /**
@@ -299,7 +299,7 @@ public class MarkerOptions: MarkerImage, SnapshotOptionsProtocol {
      
      The default value of this property matches the natural scale factor associated with the main screen. However, only images with a scale factor of 1.0 or 2.0 are ever returned by the classic Static API, so a scale factor of 1.0 of less results in a 1× (standard-resolution) image, while a scale factor greater than 1.0 results in a 2× (high-resolution or Retina) image.
      */
-    public var scale: CGFloat = UIScreen.main().scale
+    public var scale: CGFloat = UIScreen.main.scale
     #endif
     
     /**
@@ -319,7 +319,7 @@ public class MarkerOptions: MarkerImage, SnapshotOptionsProtocol {
      - parameter letter: An English letter from A through Z to place atop the pin.
      */
     public convenience init(size: Size = .small, letter: UniChar) {
-        self.init(size: size, label: .letter(Character(UnicodeScalar(letter))))
+        self.init(size: size, label: .letter(Character(UnicodeScalar(letter)!)))
     }
     
     /**
@@ -389,7 +389,7 @@ public class Snapshot: NSObject {
      - parameter image: The image data that was generated, or `nil` if an error occurred.
      - parameter error: The error that occurred, or `nil` if the snapshot was generated successfully.
      */
-    public typealias CompletionHandler = (image: Image?, error: NSError?) -> Void
+    public typealias CompletionHandler = (_ image: Image?, _ error: NSError?) -> Void
     
     /// Options that determine the contents and format of the output image.
     public let options: SnapshotOptionsProtocol
@@ -486,10 +486,10 @@ public class Snapshot: NSObject {
      - parameter completionHandler: The closure (block) to call with the resulting image. This closure is executed on the application’s main thread.
      - returns: The data task used to perform the HTTP request. If, while waiting for the completion handler to execute, you no longer want the resulting image, cancel this task.
      */
-    public func image(completionHandler handler: CompletionHandler) -> URLSessionDataTask {
+    public func image(completionHandler handler: @escaping CompletionHandler) -> URLSessionDataTask {
         let request = NSMutableURLRequest(url: url)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-        let task = URLSession.shared().dataTask(with: request as URLRequest) { (data, response, error) in
+        let task = URLSession.shared.dataTask(with: request as URLRequest) { (data, response, error) in
             var json: JSONDictionary = [:]
             var image: Image?
             if let data = data {
@@ -502,15 +502,15 @@ public class Snapshot: NSObject {
             
             let apiMessage = json["message"] as? String
             guard image != nil && error == nil && apiMessage == nil else {
-                let apiError = Snapshot.descriptiveError(json, response: response, underlyingError: error)
+                let apiError = Snapshot.descriptiveError(json, response: response, underlyingError: error as NSError?)
                 DispatchQueue.main.async {
-                    handler(image: nil, error: apiError)
+                    handler(nil, apiError)
                 }
                 return
             }
             
             DispatchQueue.main.async {
-                handler(image: image, error: nil)
+                handler(image, nil)
             }
         }
         task.resume()
@@ -527,16 +527,16 @@ public class Snapshot: NSObject {
             var recoverySuggestion: String? = nil
             switch response.statusCode {
             case 429:
-                if let timeInterval = response.allHeaderFields["x-rate-limit-interval"] as? TimeInterval, maximumCountOfRequests = response.allHeaderFields["x-rate-limit-limit"] as? UInt {
+                if let timeInterval = response.allHeaderFields["x-rate-limit-interval"] as? TimeInterval, let maximumCountOfRequests = response.allHeaderFields["x-rate-limit-limit"] as? UInt {
                     let intervalFormatter = DateComponentsFormatter()
                     intervalFormatter.unitsStyle = .full
                     let formattedInterval = intervalFormatter.string(from: timeInterval)
-                    let formattedCount = NumberFormatter.localizedString(from: maximumCountOfRequests, number: .decimal)
+                    let formattedCount = NumberFormatter.localizedString(from: NSNumber(value: maximumCountOfRequests), number: NumberFormatter.Style.decimal)
                     failureReason = "More than \(formattedCount) requests have been made with this access token within a period of \(formattedInterval)."
                 }
                 if let rolloverTimestamp = response.allHeaderFields["x-rate-limit-reset"] as? Double {
                     let date = Date(timeIntervalSince1970: rolloverTimestamp)
-                    let formattedDate = DateFormatter.localizedString(from: date, dateStyle: .longStyle, timeStyle: .fullStyle)
+                    let formattedDate = DateFormatter.localizedString(from: date, dateStyle: .long, timeStyle: .full)
                     recoverySuggestion = "Wait until \(formattedDate) before retrying."
                 }
             default:
